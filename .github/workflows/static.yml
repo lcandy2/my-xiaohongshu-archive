@@ -2,26 +2,20 @@
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
   deploy:
     environment:
       name: github-pages
@@ -29,18 +23,67 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
       
       - name: Generate directory listings
-        uses: jayanta525/github-pages-directory-listing@v4.0.0
+        run: |
+          python3 << 'EOF'
+          import os
+          from pathlib import Path
+          
+          def generate_index(directory):
+              items = []
+              for item in sorted(Path(directory).iterdir()):
+                  if item.name.startswith('.'):
+                      continue
+                  rel_path = item.relative_to(directory)
+                  if item.is_dir():
+                      items.append(f'<li>📁 <a href="{rel_path}/">{item.name}/</a></li>')
+                  else:
+                      size = item.stat().st_size
+                      size_str = f"{size:,} bytes"
+                      items.append(f'<li>📄 <a href="{rel_path}">{item.name}</a> ({size_str})</li>')
+              
+              html = f'''<!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Index of /{directory.relative_to('.')}</title>
+              <style>
+                  body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                  h1 {{ border-bottom: 1px solid #ccc; }}
+                  ul {{ list-style: none; padding: 0; }}
+                  li {{ padding: 5px 0; }}
+                  a {{ text-decoration: none; color: #0066cc; }}
+                  a:hover {{ text-decoration: underline; }}
+              </style>
+          </head>
+          <body>
+              <h1>Index of /{directory.relative_to('.')}</h1>
+              <ul>
+                  {"".join(items)}
+              </ul>
+          </body>
+          </html>'''
+              
+              index_path = directory / 'index.html'
+              if not index_path.exists():
+                  index_path.write_text(html, encoding='utf-8')
+                  print(f"Generated: {index_path}")
+          
+          for root, dirs, files in os.walk('.'):
+              root_path = Path(root)
+              if '.git' in root_path.parts or '_site' in root_path.parts:
+                  continue
+              generate_index(root_path)
+          EOF
       
       - name: Setup Pages
         uses: actions/configure-pages@v5
       
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
           path: '.'
       
       - name: Deploy to GitHub Pages
